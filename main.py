@@ -3,77 +3,344 @@ import shutil
 from pathlib import Path
 
 from config import *
-from system import get_wallet_datadir, detect_wallet_key
-from install_state import detect_existing_install, is_valid_install, blockchain_exists
+from system import (
+    get_wallet_datadir,
+    detect_wallet_key
+)
+
+from install_state import (
+    detect_existing_install,
+    is_valid_install,
+    blockchain_exists
+)
+
 from downloader import download_file
 from verify import verify_sha256
 from extractor import extract_zip
 from config_writer import write_conf
 from bootstrap import bootstrap
+from backup import backup_wallets
 
-BASE_DIR = Path.home() / "MinersWorldCoinInstaller"
-INSTALL_DIR = BASE_DIR / "wallet"
-LOCK_FILE = BASE_DIR / ".install_lock"
 
-logging.basicConfig(level=logging.INFO)
+# -----------------------------
+# PATHS
+# -----------------------------
+
+BASE_DIR = (
+    Path.home()
+    /
+    "MinersWorldCoinInstaller"
+)
+
+INSTALL_DIR = (
+    BASE_DIR
+    /
+    "wallet"
+)
+
+LOCK_FILE = (
+    BASE_DIR
+    /
+    ".install_lock"
+)
+
+
+# -----------------------------
+# LOGGING
+# -----------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s"
+)
+
 log = logging.getLogger("MWC")
 
-def main():
+
+# -----------------------------
+# SAFE BLOCKCHAIN REMOVE
+# NEVER TOUCH wallet.dat
+# -----------------------------
+
+def remove_blockchain(datadir, progress=None):
+
+    folders = [
+        "blocks",
+        "chainstate"
+    ]
+
+    for folder in folders:
+
+        target = datadir / folder
+
+        if target.exists():
+
+            if progress:
+                progress(
+                    f"Removing {folder}..."
+                )
+
+            log.info(
+                f"Removing blockchain data: {target}"
+            )
+
+            shutil.rmtree(
+                target
+            )
+
+
+# -----------------------------
+# INSTALL ENGINE
+# -----------------------------
+
+def run_installer(
+    mode="fresh",
+    delete_chain=False,
+    progress=None
+):
+
+    BASE_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+
+    def update(message):
+
+        log.info(
+            message
+        )
+
+        if progress:
+            progress(
+                message
+            )
+
 
     if LOCK_FILE.exists():
-        raise RuntimeError("Installer already running")
 
-    LOCK_FILE.write_text("locked")
+        raise RuntimeError(
+            "Installer already running"
+        )
+
+
+    LOCK_FILE.write_text(
+        "locked"
+    )
+
 
     try:
+
+        update(
+            "Starting MinersWorldCoin installer..."
+        )
+
+
         key = detect_wallet_key()
-        print("Detected:", key)
 
-        state = detect_existing_install(INSTALL_DIR, get_wallet_datadir)
+        update(
+            f"Detected system: {key}"
+        )
 
-        mode = "fresh"
+
+        datadir = get_wallet_datadir()
+
+
+        state = detect_existing_install(
+            INSTALL_DIR,
+            get_wallet_datadir
+        )
+
 
         if is_valid_install(state):
-            print("\nExisting install detected")
-            print(state)
 
-            choice = input("\n1 upgrade / 2 repair / 3 fresh: ")
+            update(
+                "Existing wallet installation detected"
+            )
 
-            mode = {"1": "upgrade", "2": "repair", "3": "fresh"}.get(choice, "fresh")
 
         filename, sha = WALLETS[key]
-        url = RELEASE_BASE + filename
 
-        INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+        url = (
+            RELEASE_BASE
+            +
+            filename
+        )
 
-        zip_path = INSTALL_DIR / filename
+
+        INSTALL_DIR.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+
+        zip_path = (
+            INSTALL_DIR
+            /
+            filename
+        )
+
+
+        # -------------------------
+        # REPAIR
+        # -------------------------
 
         if mode == "repair":
-            write_conf(get_wallet_datadir, CONF_CONTENT)
-            return
 
-        if mode == "fresh":
-            datadir = get_wallet_datadir()
+            update(
+                "Repairing configuration..."
+            )
 
-            if datadir.exists():
-                confirm = input("Delete blockchain? y/N: ")
-                if confirm == "y":
-                    for f in ["blocks", "chainstate"]:
-                        p = datadir / f
-                        if p.exists():
-                            shutil.rmtree(p)
 
-        download_file(url, zip_path)
-        verify_sha256(zip_path, sha)
-        extract_zip(zip_path, INSTALL_DIR)
+            write_conf(
+                datadir,
+                CONF_CONTENT
+            )
 
-        write_conf(get_wallet_datadir(), CONF_CONTENT)
-        bootstrap(get_wallet_datadir, BASE_DIR, blockchain_exists)
 
-        print("INSTALL COMPLETE")
+            return (
+                "Configuration repaired"
+            )
+
+
+        # -------------------------
+        # BACKUP WALLET
+        # -------------------------
+
+        if datadir.exists():
+
+            update(
+                "Creating wallet backup..."
+            )
+
+
+            backup = backup_wallets(
+                datadir
+            )
+
+
+            if backup:
+
+                update(
+                    f"Backup created:\n{backup}"
+                )
+
+
+        # -------------------------
+        # DELETE BLOCKCHAIN ONLY
+        # -------------------------
+
+        if delete_chain:
+
+            update(
+                "Removing old blockchain data..."
+            )
+
+
+            remove_blockchain(
+                datadir,
+                progress
+            )
+
+
+        # -------------------------
+        # DOWNLOAD
+        # -------------------------
+
+        update(
+            "Downloading wallet..."
+        )
+
+
+        download_file(
+            url,
+            zip_path
+        )
+
+
+        update(
+            "Verifying download..."
+        )
+
+
+        verify_sha256(
+            zip_path,
+            sha
+        )
+
+
+        update(
+            "Extracting wallet files..."
+        )
+
+
+        extract_zip(
+            zip_path,
+            INSTALL_DIR
+        )
+
+
+        zip_path.unlink(
+            missing_ok=True
+        )
+
+
+        # -------------------------
+        # CONFIG
+        # -------------------------
+
+        update(
+            "Writing configuration..."
+        )
+
+
+        write_conf(
+            datadir,
+            CONF_CONTENT
+        )
+
+
+        # -------------------------
+        # BOOTSTRAP
+        # -------------------------
+
+        update(
+            "Checking blockchain bootstrap..."
+        )
+
+
+        bootstrap(
+            datadir,
+            BASE_DIR,
+            blockchain_exists
+        )
+
+
+        update(
+            "Installation complete"
+        )
+
+
+        return (
+            "MinersWorldCoin installed successfully"
+        )
+
 
     finally:
-        LOCK_FILE.unlink(missing_ok=True)
+
+        LOCK_FILE.unlink(
+            missing_ok=True
+        )
+
+
+
+# -----------------------------
+# TEST MODE
+# -----------------------------
 
 if __name__ == "__main__":
-    main()
+
+    run_installer(
+        mode="fresh",
+        delete_chain=False
+    )
