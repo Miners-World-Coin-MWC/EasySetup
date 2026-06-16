@@ -164,6 +164,23 @@ def build():
             ]
         )
 
+    # -------------------------
+    # COLLECT PACKAGES
+    # -------------------------
+
+    collect_packages = [
+        "requests"
+    ]
+
+    for package in collect_packages:
+
+        command.extend(
+            [
+                "--collect-all",
+                package
+            ]
+        )
+
     print("\nRunning:")
     print(
         " ".join(
