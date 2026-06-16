@@ -1,0 +1,113 @@
+name: Build MinersWorldCoin Installer
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+
+jobs:
+
+  build:
+
+    name: Build ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+
+
+    runs-on: ${{ matrix.os }}
+
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+
+        with:
+          python-version: "3.8"
+
+
+      - name: Upgrade pip
+        run: |
+          python -m pip install --upgrade pip
+
+
+      - name: Install Requirements
+        shell: bash
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+
+      - name: Build Installer
+        run: |
+          python build.py
+
+
+      - name: Verify Build Output
+        shell: bash
+        run: |
+          echo "===== BUILD OUTPUT ====="
+          ls -lah dist
+
+
+      # -------------------------
+      # WINDOWS
+      # -------------------------
+      - name: Upload Windows Installer
+        if: runner.os == 'Windows'
+
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: MinersWorldCoinInstaller-Windows
+
+          path: |
+            dist/MinersWorldCoinInstaller.exe
+            assets/
+
+
+      # -------------------------
+      # LINUX
+      # -------------------------
+      - name: Upload Linux Installer
+        if: runner.os == 'Linux'
+
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: MinersWorldCoinInstaller-Linux
+
+          path: |
+            dist/MinersWorldCoinInstaller
+            assets/
+
+
+      # -------------------------
+      # MACOS
+      # -------------------------
+      - name: Upload macOS Installer
+        if: runner.os == 'macOS'
+
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: MinersWorldCoinInstaller-macOS
+
+          path: |
+            dist/MinersWorldCoinInstaller
+            assets/
