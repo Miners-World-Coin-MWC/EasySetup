@@ -1,6 +1,8 @@
 import logging
 import shutil
 import platform
+import os
+
 from pathlib import Path
 
 from config import *
@@ -28,7 +30,18 @@ from backup import backup_wallets
 def get_default_install_base():
     if platform.system() == "Windows":
         return (
-            Path("C:/Program Files")
+            Path(
+                os.environ.get(
+                    "PROGRAMFILES",
+                    "C:\\Program Files"
+                )
+            )
+            /
+            "MinersWorldCoin"
+        )
+    elif platform.system() == "Darwin":
+        return (
+            Path("/Applications")
             /
             "MinersWorldCoin"
         )
@@ -48,9 +61,7 @@ def set_install_dir(path):
 def get_install_dir(filename):
     global INSTALL_DIR
     if INSTALL_DIR == get_default_install_base():
-        folder_name = Path(
-            filename
-        ).stem
+        folder_name = Path(filename).stem
         INSTALL_DIR = (
             INSTALL_DIR
             /
@@ -59,10 +70,34 @@ def get_install_dir(filename):
 
     return INSTALL_DIR
 
-BASE_DIR = get_default_install_base()
+# -----------------------------
+# SAFE LOCK LOCATION
+# -----------------------------
+if platform.system() == "Windows":
+    LOCK_BASE = (
+        Path(
+            os.environ.get(
+                "LOCALAPPDATA",
+                Path.home()
+            )
+        )
+        /
+        "MinersWorldCoin"
+    )
+else:
+    LOCK_BASE = (
+        Path.home()
+        /
+        ".minersworldcoin"
+    )
+
+LOCK_BASE.mkdir(
+    parents=True,
+    exist_ok=True
+)
 
 LOCK_FILE = (
-    BASE_DIR
+    LOCK_BASE
     /
     ".install_lock"
 )
@@ -72,9 +107,11 @@ LOCK_FILE = (
 # -----------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="[%(asctime)s] %(levelname)s: %(message)s"
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    force=True
 )
 log = logging.getLogger("MWC")
+log.propagate = True
 
 # -----------------------------
 # SAFE BLOCKCHAIN REMOVE
@@ -126,9 +163,35 @@ def run_installer(
             )
 
     if LOCK_FILE.exists():
-        raise RuntimeError(
-            "Installer already running"
-        )
+
+        try:
+            age = (
+                Path(LOCK_FILE)
+                .stat()
+                .st_mtime
+            )
+
+            import time
+
+            # lock older than 10 minutes
+            if time.time() - age > 600:
+
+                log.warning(
+                    "Removing stale installer lock"
+                )
+
+                LOCK_FILE.unlink(
+                    missing_ok=True
+                )
+
+            else:
+
+                raise RuntimeError(
+                    "Installer already running"
+                )
+
+        except FileNotFoundError:
+            pass
 
     LOCK_FILE.parent.mkdir(
         parents=True,
@@ -208,7 +271,8 @@ def run_installer(
 
             write_conf(
                 datadir,
-                CONF_CONTENT
+                CONF_CONTENT,
+                overwrite=True
             )
 
             return (

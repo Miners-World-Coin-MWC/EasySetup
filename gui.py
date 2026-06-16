@@ -357,11 +357,54 @@ class InstallerGUI:
             pady=10,
             fill="both"
         )
-        logging.getLogger().addHandler(
-            TextHandler(
-                self.log_box
-            )
+
+        handler = TextHandler(
+            self.log_box
         )
+
+        formatter = logging.Formatter(
+            "[%(asctime)s] %(levelname)s: %(message)s"
+        )
+
+        handler.setFormatter(
+            formatter
+        )
+
+
+        # Main logger
+        root_logger = logging.getLogger()
+
+        root_logger.setLevel(
+            logging.INFO
+        )
+
+
+        # Remove ANY previous GUI handlers
+        for h in root_logger.handlers[:]:
+
+            if isinstance(h, TextHandler):
+                root_logger.removeHandler(h)
+
+
+        root_logger.addHandler(
+            handler
+        )
+
+
+        # Prevent child loggers adding duplicates
+        for name in [
+            "MWC",
+            "MWC_GUI",
+            "MWC_CONFIG",
+            "MWC_BOOTSTRAP"
+        ]:
+
+            logger = logging.getLogger(name)
+
+            logger.handlers.clear()
+
+            logger.propagate = True
+
         # BUTTONS
         buttons=tk.Frame(
             root,
@@ -544,7 +587,7 @@ class InstallerGUI:
                 install_path=Path(
                     self.install_path.get()
                 ),
-                progress=lambda x:logging.info(x)
+                progress=lambda x: log.info(x)
             )
             self.root.after(
                 0,
@@ -584,39 +627,85 @@ class InstallerGUI:
     # REPAIR
     # -----------------------------
     def repair_wallet(self):
+
+        answer = messagebox.askyesno(
+            "Repair Wallet",
+            "Repair will rewrite the wallet configuration file.\n\n"
+            "wallet.dat and blockchain data will NOT be touched.\n\n"
+            "Continue?"
+        )
+
+        if not answer:
+            return
+
+        self.repair_button.config(
+            state="disabled"
+        )
+
+        self.progress.start(10)
+
         threading.Thread(
             target=self.repair,
             daemon=True
         ).start()
 
+
     def repair(self):
+
         try:
-            result=run_installer(
+
+            result = run_installer(
                 mode="repair",
+                delete_chain=False,
                 install_path=Path(
                     self.install_path.get()
                 ),
-                progress=lambda x:logging.info(x)
+                progress=lambda x: log.info(x)
             )
+
             self.root.after(
                 0,
                 self.refresh_status
             )
+
             self.root.after(
                 0,
-                lambda:
+                lambda msg=result:
                 messagebox.showinfo(
                     "Repair Complete",
-                    result
+                    msg
                 )
             )
-        except Exception as e:
+
+
+        except Exception as error:
+
+            logging.exception(
+                "Repair failed"
+            )
+
+            self.root.after(
+                0,
+                lambda err=str(error):
+                messagebox.showerror(
+                    "Repair Failed",
+                    err
+                )
+            )
+
+
+        finally:
+
+            self.root.after(
+                0,
+                self.progress.stop
+            )
+
             self.root.after(
                 0,
                 lambda:
-                messagebox.showerror(
-                    "Repair Failed",
-                    str(e)
+                self.repair_button.config(
+                    state="normal"
                 )
             )
     # -----------------------------
